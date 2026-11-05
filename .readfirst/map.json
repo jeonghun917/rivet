@@ -1,0 +1,755 @@
+{
+  "format": "readfirst/map@1",
+  "groups": [
+    {
+      "id": "envoy",
+      "title": "Envoy wire protocol (v8 BARE schema), envoy client and the guard response body: the tunnel between the engine and actor hosts",
+      "files": [
+        "engine/sdks/rust/envoy-client/**",
+        "engine/sdks/rust/envoy-protocol/**",
+        "engine/packages/guard-core/**"
+      ],
+      "checks": [
+        {
+          "run": "cargo check --workspace --exclude rivetkit-wasm",
+          "why": "the Rust workspace builds (CI runs it with warnings denied)"
+        },
+        {
+          "run": "cargo fmt --all -- --check",
+          "why": "formatting gate in the Rust CI job"
+        },
+        {
+          "run": "cargo test -p rivet-envoy-client",
+          "why": "envoy client tests, including command dedup and drain waits"
+        }
+      ],
+      "risks": [
+        {
+          "text": "Crash versus destroy hinges on which intent is sent: sleep_actor(.., error) makes the engine put the actor back to sleep, stop_actor destroys the actor and its durable state and takes no error on purpose. A crash sent through stop_actor wipes data - engine/sdks/rust/envoy-client/src/handle.rs:197 (history 3f6314f)",
+          "files": [
+            "engine/sdks/rust/envoy-client/src/handle.rs"
+          ]
+        },
+        {
+          "text": "The lost-connection path (stop_all_actors_lost) fails every pending kv/sqlite request and sends ToActor::Lost to every actor; a Lost stop must still surface as Stopped(Error), not a clean stop - engine/sdks/rust/envoy-client/src/envoy.rs:951 (history 4a2cd74)",
+          "files": [
+            "engine/sdks/rust/envoy-client/src/envoy.rs",
+            "engine/sdks/rust/envoy-client/src/actor.rs"
+          ]
+        },
+        {
+          "text": "HTTP streaming is credit-based: bodies are bounded by HTTP_STREAM_INITIAL_WINDOW_BYTES and the receiver must return cumulative window updates; the actor side also emits ToRivetResponseAbort on transport failure. Changing one side without the other stalls or leaks streams, and the streaming lifecycle hardening was once reverted - engine/sdks/rust/envoy-client/src/actor/http.rs:49 (history 5dad928)",
+          "files": [
+            "engine/sdks/rust/envoy-client/src/actor/http.rs",
+            "engine/packages/guard-core/src/response_body.rs",
+            "engine/sdks/rust/envoy-protocol/src/lib.rs"
+          ]
+        },
+        {
+          "text": "v8 is both the latest and the oldest supported envoy protocol, so there are no converters and any other version is refused at decode. Editing v8.bare in place changes the wire format for every deployed RivetKit >= 2.3.20 host; lib.rs re-exports v8::* so a schema edit changes Rust types everywhere at once - engine/sdks/rust/envoy-protocol/src/versioned/mod.rs:6 (history 5dad928)",
+          "files": [
+            "engine/sdks/rust/envoy-protocol/schemas/v8.bare",
+            "engine/sdks/rust/envoy-protocol/src/versioned/mod.rs",
+            "engine/sdks/rust/envoy-protocol/src/lib.rs"
+          ]
+        },
+        {
+          "text": "A response body channel can end with an out-of-band terminal error that Hyper only sees after queued data frames; setting it first-wins (fail ignores a second error) - engine/packages/guard-core/src/response_body.rs:41 (history 5dad928)",
+          "files": [
+            "engine/packages/guard-core/src/response_body.rs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "engine",
+      "title": "Rivet engine: pegboard scheduling, guard, API, depot/SQLite storage and the rest of the Rust engine services",
+      "files": [
+        "engine/artifacts/**",
+        "engine/sdks/schemas/**",
+        "engine/sdks/typescript/**",
+        "engine/packages/alloc-count/**",
+        "engine/packages/api-builder/**",
+        "engine/packages/api-peer/**",
+        "engine/packages/api-public/**",
+        "engine/packages/api-public-openapi-gen/**",
+        "engine/packages/api-public-shim/**",
+        "engine/packages/api-types/**",
+        "engine/packages/api-util/**",
+        "engine/packages/auth/**",
+        "engine/packages/auth-jwt/**",
+        "engine/packages/auth-policy/**",
+        "engine/packages/bootstrap/**",
+        "engine/packages/build-meta/**",
+        "engine/packages/cache/**",
+        "engine/packages/cache-purge/**",
+        "engine/packages/cache-result/**",
+        "engine/packages/cli/**",
+        "engine/packages/cluster-config/**",
+        "engine/packages/config/**",
+        "engine/packages/config-schema-gen/**",
+        "engine/packages/datacenter/**",
+        "engine/packages/depot-client/**",
+        "engine/packages/depot-fs-core/**",
+        "engine/packages/depot-log/**",
+        "engine/packages/depot-types/**",
+        "engine/packages/depot-volume/**",
+        "engine/packages/depot-worker/**",
+        "engine/packages/durable-reconciler/**",
+        "engine/packages/engine/**",
+        "engine/packages/engine-context/**",
+        "engine/packages/env/**",
+        "engine/packages/epoxy/**",
+        "engine/packages/error/**",
+        "engine/packages/error-macros/**",
+        "engine/packages/guard/**",
+        "engine/packages/keys/**",
+        "engine/packages/logs/**",
+        "engine/packages/metrics/**",
+        "engine/packages/metrics-server/**",
+        "engine/packages/namespace/**",
+        "engine/packages/object-store-util/**",
+        "engine/packages/outbound-guard/**",
+        "engine/packages/pegboard/**",
+        "engine/packages/pegboard-envoy/**",
+        "engine/packages/pegboard-gateway/**",
+        "engine/packages/pegboard-v2-migrator/**",
+        "engine/packages/postgres-util/**",
+        "engine/packages/rivet-sqlite-types/**",
+        "engine/packages/runtime/**",
+        "engine/packages/service-manager/**",
+        "engine/packages/singleton-coordinator/**",
+        "engine/packages/sqlite-embedded/**",
+        "engine/packages/sqlite-embedded-filesystem/**",
+        "engine/packages/sqlite-prefetch/**",
+        "engine/packages/sqlite-remote/**",
+        "engine/packages/state-machine/**",
+        "engine/packages/state-machine-durable/**",
+        "engine/packages/state-machine-ephemeral/**",
+        "engine/packages/state-machine-util/**",
+        "engine/packages/telemetry/**",
+        "engine/packages/term/**",
+        "engine/packages/topology/**",
+        "engine/packages/tracing-utils/**",
+        "engine/packages/types/**",
+        "engine/packages/universalpubsub/**",
+        "engine/packages/util/**",
+        "engine/packages/util-id/**",
+        "engine/packages/util-serde/**",
+        "engine/packages/version-management/**",
+        "engine/sdks/rust/actor-runtime-socket-protocol/**",
+        "engine/sdks/rust/data/**",
+        "engine/sdks/rust/depot-protocol/**",
+        "engine/sdks/rust/epoxy-protocol/**",
+        "engine/sdks/rust/migrate-from-v2-protocol/**",
+        "engine/sdks/rust/ups-protocol/**"
+      ],
+      "checks": [
+        {
+          "run": "cargo check --workspace --exclude rivetkit-wasm",
+          "why": "the Rust workspace builds (CI runs it with warnings denied)"
+        },
+        {
+          "run": "cargo fmt --all -- --check",
+          "why": "formatting gate in the Rust CI job"
+        }
+      ],
+      "risks": [
+        {
+          "text": "RivetError macros write engine/artifacts/errors/*.json during cargo check; CI fails if they changed, so commit the regenerated artifacts and run pnpm docs:gen-api - .github/workflows/rust.yml:70"
+        }
+      ]
+    },
+    {
+      "id": "rivetkit-core",
+      "title": "rivetkit-core: the Rust actor runtime (lifecycle, sleep/stop, schedule, sqlite, registry dispatcher) shared by every language binding",
+      "files": [
+        "rivetkit-rust/packages/rivetkit-core/**"
+      ],
+      "checks": [
+        {
+          "run": "cargo check --workspace --exclude rivetkit-wasm",
+          "why": "the Rust workspace builds (CI runs it with warnings denied)"
+        },
+        {
+          "run": "cargo fmt --all -- --check",
+          "why": "formatting gate in the Rust CI job"
+        },
+        {
+          "run": "rivetkit-rust/packages/rivetkit-core/scripts/check-event-driven-drains.sh",
+          "why": "CI guard against polling drains in the actor lifecycle"
+        },
+        {
+          "run": "cargo test -p rivetkit-core",
+          "why": "core lifecycle, sleep, schedule, sqlite and task tests"
+        }
+      ],
+      "risks": [
+        {
+          "text": "Actor crashes (errored stop, dead SQLite worker) must go out as a sleep intent with an error, never as stop_actor; stop_with_error keeps a single error slot consumed by take(), so sending a second error-less intent races and reports the crash as a destroy - rivetkit-rust/packages/rivetkit-core/src/actor/context.rs:743 (history 3f6314f)",
+          "files": [
+            "rivetkit-rust/packages/rivetkit-core/src/actor/context.rs",
+            "rivetkit-rust/packages/rivetkit-core/src/actor/sleep.rs",
+            "rivetkit-rust/packages/rivetkit-core/src/actor/sqlite/mod.rs"
+          ]
+        },
+        {
+          "text": "The schedule alarm marker (last_pushed_alarm) only dedupes pushes inside one generation; every actor start must force a re-push because a push can be acked locally and lost during drain, otherwise scheduled actions never fire - rivetkit-rust/packages/rivetkit-core/src/actor/context.rs:671 (history d2abe5d)",
+          "files": [
+            "rivetkit-rust/packages/rivetkit-core/src/actor/context.rs",
+            "rivetkit-rust/packages/rivetkit-core/src/actor/schedule.rs"
+          ]
+        },
+        {
+          "text": "Websocket hibernation is decided per request by can_hibernate (config bool or callback) and defaults to off after a fix; flipping the default or leaving connections registered for hibernation changes who gets disconnected on sleep, and HTTP action connections must be removed when aborted - rivetkit-rust/packages/rivetkit-core/src/registry/mod.rs:1411 (history 22616c6, 6ca9b15)",
+          "files": [
+            "rivetkit-rust/packages/rivetkit-core/src/registry/mod.rs"
+          ]
+        },
+        {
+          "text": "lib.rs re-exports are public API for the Rust and NAPI bindings; the http body stream re-exports were dropped and restored once, so removing a pub use breaks downstream crates - rivetkit-rust/packages/rivetkit-core/src/lib.rs:129 (history d44805d)",
+          "files": [
+            "rivetkit-rust/packages/rivetkit-core/src/lib.rs"
+          ]
+        },
+        {
+          "text": "native-runtime and wasm-runtime features are mutually exclusive and fail with compile_error; code under cfg(native-runtime) (engine_process, serverless_http) is absent in wasm builds - rivetkit-rust/packages/rivetkit-core/src/lib.rs:1"
+        }
+      ]
+    },
+    {
+      "id": "rivetkit-rust",
+      "title": "Rust client, actor persistence, shared types and protocol crates for RivetKit",
+      "files": [
+        "rivetkit-rust/Cargo.toml",
+        "rivetkit-rust/packages/actor-persist/**",
+        "rivetkit-rust/packages/client/**",
+        "rivetkit-rust/packages/client-protocol/**",
+        "rivetkit-rust/packages/engine-process/**",
+        "rivetkit-rust/packages/inspector-protocol/**",
+        "rivetkit-rust/packages/rivetkit/**",
+        "rivetkit-rust/packages/shared-types/**"
+      ],
+      "checks": [
+        {
+          "run": "cargo check --workspace --exclude rivetkit-wasm",
+          "why": "the Rust workspace builds (CI runs it with warnings denied)"
+        },
+        {
+          "run": "cargo fmt --all -- --check",
+          "why": "formatting gate in the Rust CI job"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "rivetkit-napi",
+      "title": "rivetkit-napi: the native Node binding built from rivetkit-core by scripts/build.mjs",
+      "files": [
+        "rivetkit-typescript/packages/rivetkit-napi/**"
+      ],
+      "checks": [
+        {
+          "run": "cargo check --workspace --exclude rivetkit-wasm",
+          "why": "the addon crate compiles against core"
+        },
+        {
+          "run": "pnpm --filter ./rivetkit-typescript/packages/rivetkit-napi run build",
+          "why": "the addon builds via scripts/build.mjs using the dev-only @napi-rs/cli"
+        }
+      ],
+      "risks": [
+        {
+          "text": "@napi-rs/cli is a devDependency only, because installing the published package must not pull the build tool; the published files list is just index.js, index.d.ts, package.json and scripts/build.mjs - rivetkit-typescript/packages/rivetkit-napi/package.json:49 (history 383a581)",
+          "files": [
+            "rivetkit-typescript/packages/rivetkit-napi/package.json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rivetkit-typescript",
+      "title": "RivetKit TypeScript package: public actor API, client, native registry bridge, inspector, workflow, plus wasm and other TS packages",
+      "files": [
+        "rivetkit-typescript/artifacts/**",
+        "rivetkit-typescript/packages/cli/**",
+        "rivetkit-typescript/packages/devtools/**",
+        "rivetkit-typescript/packages/effect/**",
+        "rivetkit-typescript/packages/engine-cli/**",
+        "rivetkit-typescript/packages/framework-base/**",
+        "rivetkit-typescript/packages/react/**",
+        "rivetkit-typescript/packages/rivetkit/**",
+        "rivetkit-typescript/packages/rivetkit-wasm/**",
+        "rivetkit-typescript/packages/sql-loader/**",
+        "rivetkit-typescript/packages/traces/**",
+        "rivetkit-typescript/packages/workflow-engine/**"
+      ],
+      "checks": [
+        {
+          "run": "pnpm run check-types",
+          "why": "types across the workspace"
+        },
+        {
+          "run": "pnpm run lint",
+          "why": "biome rules"
+        },
+        {
+          "run": "pnpm test",
+          "why": "the package test suites through turbo"
+        }
+      ],
+      "risks": [
+        {
+          "text": "native.ts is the bridge to the NAPI/WASM runtime and holds callbacks for every lifecycle hook; actor.log is cached per invocation scope and must be rebuilt when the run's ray changes (queue receive clears it), or logs carry a stale rayId/trace - rivetkit-typescript/packages/rivetkit/src/registry/native.ts:3060 (history 4cf974f)",
+          "files": [
+            "rivetkit-typescript/packages/rivetkit/src/registry/native.ts"
+          ]
+        },
+        {
+          "text": "Disconnect handling is wired only when onDisconnect, connState or canHibernateWebSocket === true exist (needsDisconnectCallback); adding a new connection feature without extending that condition silently skips disconnect callbacks - rivetkit-typescript/packages/rivetkit/src/registry/native.ts:4214",
+          "files": [
+            "rivetkit-typescript/packages/rivetkit/src/registry/native.ts"
+          ]
+        },
+        {
+          "text": "@rivet-dev/services is an optional dependency that must stay at >= 0.2.3 so older glibc hosts install a compatible binary; lowering it breaks those hosts - rivetkit-typescript/packages/rivetkit/package.json:252 (history 2fa1ebe)",
+          "files": [
+            "rivetkit-typescript/packages/rivetkit/package.json"
+          ]
+        },
+        {
+          "text": "The package build ends with scripts/check-built-commonjs.mjs, so a new entry point must be added to the tsup command list in package.json or it ships unbuilt/unchecked - rivetkit-typescript/packages/rivetkit/package.json:194",
+          "files": [
+            "rivetkit-typescript/packages/rivetkit/package.json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "examples",
+      "title": "Runnable example apps (React + Vite frontends with rivetkit actors) that docs snippets are extracted from",
+      "files": [
+        "examples/**"
+      ],
+      "checks": [
+        {
+          "run": "pnpm run check-types",
+          "why": "types across the workspace"
+        },
+        {
+          "run": "pnpm run lint",
+          "why": "biome rules"
+        },
+        {
+          "run": "pnpm test",
+          "why": "the package test suites through turbo"
+        }
+      ],
+      "risks": [
+        {
+          "text": "cursors-raw-websocket opens its WebSocket inside an async connect() in a useEffect, but the cleanup only closes `ws` if it is already set; under StrictMode the first effect's cleanup runs before the socket exists, so the first socket is never closed and its close handler later sets connected=false and wsRef=null over the live one - examples/cursors-raw-websocket/frontend/App.tsx:183",
+          "files": [
+            "examples/cursors-raw-websocket/frontend/App.tsx"
+          ]
+        },
+        {
+          "text": "collaborative-document builds its Y.Doc and Awareness in a useEffect with a cleanup that destroys them, and a second effect pushes updates through connectionRef; effects here must keep the off/destroy cleanup or the StrictMode double mount registers duplicate update handlers that send every edit twice - examples/collaborative-document/frontend/App.tsx:123",
+          "files": [
+            "examples/collaborative-document/frontend/App.tsx"
+          ]
+        },
+        {
+          "text": "collaborative-document-ot creates a DocumentSync with a random clientId per effect run and resyncs from a snapshot; the double StrictMode run creates two syncs, so only the one stored in syncRef may receive operations (cleanup nulls the ref) - examples/collaborative-document-ot/frontend/App.tsx:35",
+          "files": [
+            "examples/collaborative-document-ot/frontend/App.tsx"
+          ]
+        },
+        {
+          "text": "ai-agent and chat-room effects only fetch history/status and set state (ai-agent/frontend/App.tsx:33, chat-room/frontend/App.tsx:22), safe to repeat; do not add sends or subscriptions to them without a cleanup",
+          "files": [
+            "examples/ai-agent/frontend/App.tsx",
+            "examples/chat-room/frontend/App.tsx"
+          ]
+        },
+        {
+          "text": "Code between docs:start/docs:end markers is pulled into the published docs; renaming or deleting a marker breaks the docs pages that embed it - examples/chat-room/frontend/App.tsx:5"
+        }
+      ]
+    },
+    {
+      "id": "docs",
+      "title": "Documentation sources synced to the website; API reference pages are generated",
+      "files": [
+        "docs/**"
+      ],
+      "checks": [
+        {
+          "run": "pnpm docs:check-api",
+          "why": "generated API reference is in step with the source"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "docker",
+      "title": "Docker build files for the engine image",
+      "files": [
+        "docker/**"
+      ],
+      "checks": [
+        {
+          "run": "docker build -f docker/engine/Dockerfile --target engine-full -t rivetdev/engine:local .",
+          "why": "the engine image builds (just docker-build)"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "github",
+      "title": "GitHub Actions workflows: Rust CI, docs sync, frontend, swift mirror and publish",
+      "files": [
+        ".github/**"
+      ],
+      "checks": [
+        {
+          "run": "cargo fmt --all -- --check",
+          "why": "the fmt job of rust.yml"
+        },
+        {
+          "run": "pnpm docs:check-api",
+          "why": "the docs-api-check workflow"
+        }
+      ],
+      "risks": [
+        {
+          "text": "rust.yml has one required status job (Rust CI Status) that needs only fmt and check; a new job must be added to its needs list or its failure is not enforced - .github/workflows/rust.yml:100"
+        }
+      ]
+    },
+    {
+      "id": "cargo",
+      "title": "Cargo configuration",
+      "files": [
+        ".cargo/**"
+      ],
+      "checks": [
+        {
+          "run": "cargo check --workspace --exclude rivetkit-wasm",
+          "why": "the Rust workspace builds (CI runs it with warnings denied)"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "integrations",
+      "title": "Framework integrations",
+      "files": [
+        "integrations/**"
+      ],
+      "checks": [
+        {
+          "run": "pnpm run check-types",
+          "why": "types across the workspace"
+        },
+        {
+          "run": "pnpm run lint",
+          "why": "biome rules"
+        },
+        {
+          "run": "pnpm test",
+          "why": "the package test suites through turbo"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "schemas",
+      "title": "Generated OpenAPI, AsyncAPI and JSON schema artifacts",
+      "files": [
+        "rivetkit-asyncapi/**",
+        "rivetkit-json-schema/**",
+        "rivetkit-openapi/**"
+      ],
+      "checks": [
+        {
+          "run": "pnpm docs:check-api",
+          "why": "generated API docs match"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "python-swift",
+      "title": "Python and Swift RivetKit bindings",
+      "files": [
+        "rivetkit-python/**",
+        "rivetkit-swift/**"
+      ],
+      "checks": [
+        {
+          "run": "swift test",
+          "why": "Swift package tests; swift.yml runs it from rivetkit-swift after building the rivetkit package"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "root",
+      "title": "Top-level workspace files: Cargo/pnpm workspace manifests, toolchain, lint and release config",
+      "files": [
+        ".dockerignore",
+        ".editorconfig",
+        ".gitattributes",
+        ".gitignore",
+        "CHANGELOG.md",
+        "Cargo.lock",
+        "Cargo.toml",
+        "LICENSE",
+        "README.md",
+        "biome.json",
+        "clippy.toml",
+        "deny.toml",
+        "justfile",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "rust-toolchain.toml",
+        "rustfmt.toml",
+        "tsconfig.base.json",
+        "tsup.base.ts",
+        "turbo.json"
+      ],
+      "checks": [
+        {
+          "run": "pnpm test",
+          "why": "the test suite"
+        },
+        {
+          "run": "pnpm run check-types",
+          "why": "types"
+        },
+        {
+          "run": "pnpm run lint",
+          "why": "lint rules"
+        },
+        {
+          "run": "cargo test",
+          "why": "the Rust tests"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "scripts",
+      "title": "Repository scripts for formatting, docs generation and publishing",
+      "files": [
+        "scripts/**"
+      ],
+      "checks": [
+        {
+          "run": "pnpm test",
+          "why": "the test suite"
+        },
+        {
+          "run": "pnpm run check-types",
+          "why": "types"
+        },
+        {
+          "run": "pnpm run lint",
+          "why": "lint rules"
+        },
+        {
+          "run": "cargo test",
+          "why": "the Rust tests"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "shared",
+      "title": "Shared assets used across packages",
+      "files": [
+        "shared/**"
+      ],
+      "checks": [
+        {
+          "run": "pnpm test",
+          "why": "the test suite"
+        },
+        {
+          "run": "pnpm run check-types",
+          "why": "types"
+        },
+        {
+          "run": "pnpm run lint",
+          "why": "lint rules"
+        },
+        {
+          "run": "cargo test",
+          "why": "the Rust tests"
+        }
+      ],
+      "risks": []
+    },
+    {
+      "id": "vendor",
+      "title": "Vendored third-party sources (SlateDB, object_store) regenerated from pinned releases by regenerate.py",
+      "files": [
+        "vendor/**"
+      ],
+      "checks": [
+        {
+          "run": "pnpm test",
+          "why": "the test suite"
+        },
+        {
+          "run": "pnpm run check-types",
+          "why": "types"
+        },
+        {
+          "run": "pnpm run lint",
+          "why": "lint rules"
+        },
+        {
+          "run": "cargo test",
+          "why": "the Rust tests"
+        }
+      ],
+      "risks": []
+    }
+  ],
+  "rules": [
+    {
+      "id": "crash-is-sleep",
+      "rule": "Report actor crashes through EnvoyHandle::sleep_actor with an error; call stop_actor only for a deliberate destroy.",
+      "why": "stop_actor makes the engine destroy the actor and its durable state, so a crash reported that way deletes user data.",
+      "files": [
+        "engine/sdks/rust/envoy-client/src/handle.rs",
+        "rivetkit-rust/packages/rivetkit-core/src/actor/sleep.rs",
+        "rivetkit-rust/packages/rivetkit-core/src/actor/context.rs"
+      ],
+      "checks": [
+        {
+          "run": "cargo test -p rivetkit-core",
+          "why": "sleep and stop lifecycle tests"
+        }
+      ]
+    },
+    {
+      "id": "repush-alarm-on-start",
+      "rule": "Every actor start calls force_next_alarm_push before syncing the schedule alarm.",
+      "why": "The engine may have lost a previously acked alarm, and scheduled actions would silently never fire.",
+      "files": [
+        "rivetkit-rust/packages/rivetkit-core/src/actor/context.rs",
+        "rivetkit-rust/packages/rivetkit-core/src/actor/schedule.rs"
+      ],
+      "checks": [
+        {
+          "run": "cargo test -p rivetkit-core --test task",
+          "why": "startup alarm push behaviour"
+        }
+      ]
+    },
+    {
+      "id": "v8-wire-compat",
+      "rule": "Do not change the shape of schemas/v8.bare or MIN_PROTOCOL_VERSION without adding a new version with converters.",
+      "why": "Deployed hosts on RivetKit >= 2.3.20 speak v8 and decoding any other version is refused, which disconnects them from the engine.",
+      "files": [
+        "engine/sdks/rust/envoy-protocol/schemas/v8.bare",
+        "engine/sdks/rust/envoy-protocol/src/versioned/mod.rs"
+      ],
+      "checks": [
+        {
+          "run": "cargo check --workspace --exclude rivetkit-wasm",
+          "why": "generated protocol types still build for client and engine"
+        }
+      ]
+    },
+    {
+      "id": "http-stream-credit",
+      "rule": "Keep both directions of HTTP body streaming on the window-update protocol and send a response abort when the transport fails.",
+      "why": "A missing window update stalls a request forever and a missing abort leaks the stream in the gateway.",
+      "files": [
+        "engine/sdks/rust/envoy-client/src/actor/http.rs",
+        "engine/packages/guard-core/src/response_body.rs"
+      ],
+      "checks": [
+        {
+          "run": "cargo test -p rivet-envoy-client",
+          "why": "envoy client tunnel tests"
+        }
+      ]
+    },
+    {
+      "id": "error-artifacts-committed",
+      "rule": "Commit engine/artifacts/errors/*.json regenerated by cargo check.",
+      "why": "The Rust CI job fails when cargo check leaves these artifacts modified.",
+      "files": [
+        "engine/artifacts/**"
+      ],
+      "checks": [
+        {
+          "run": "cargo check --workspace --exclude rivetkit-wasm",
+          "why": "regenerates the error artifacts; git status must stay clean"
+        }
+      ]
+    },
+    {
+      "id": "no-polling-drains",
+      "rule": "Lifecycle drains in rivetkit-core stay event driven; run check-event-driven-drains.sh after touching them.",
+      "why": "CI runs the script and fails the Rust job on a polling pattern.",
+      "files": [
+        "rivetkit-rust/packages/rivetkit-core/src/**"
+      ],
+      "checks": [
+        {
+          "run": "rivetkit-rust/packages/rivetkit-core/scripts/check-event-driven-drains.sh",
+          "why": "forbidden polling patterns"
+        }
+      ]
+    },
+    {
+      "id": "napi-cli-dev-only",
+      "rule": "Keep @napi-rs/cli in devDependencies of rivetkit-napi.",
+      "why": "Consumers installing the published package would otherwise pull the build tool.",
+      "files": [
+        "rivetkit-typescript/packages/rivetkit-napi/package.json"
+      ],
+      "checks": [
+        {
+          "run": "pnpm --filter ./rivetkit-typescript/packages/rivetkit-napi run build",
+          "why": "build still finds @napi-rs/cli as a devDependency"
+        }
+      ]
+    },
+    {
+      "id": "services-min-version",
+      "rule": "Keep the @rivet-dev/services optional dependency at 0.2.3 or newer.",
+      "why": "Older versions ship a binary that fails to load on older glibc hosts.",
+      "files": [
+        "rivetkit-typescript/packages/rivetkit/package.json"
+      ],
+      "checks": [
+        {
+          "run": "pnpm --filter ./rivetkit-typescript/packages/rivetkit run build",
+          "why": "package builds and check-built-commonjs passes with the resolved services dependency"
+        }
+      ]
+    },
+    {
+      "id": "api-docs-generated",
+      "rule": "Regenerate API reference docs with pnpm docs:gen-api after changing public API or error artifacts.",
+      "why": "The docs-api-check workflow fails when the committed reference is stale.",
+      "files": [
+        "docs/**"
+      ],
+      "checks": [
+        {
+          "run": "pnpm docs:check-api",
+          "why": "generated reference is current"
+        }
+      ]
+    }
+  ],
+  "ignore": []
+}
